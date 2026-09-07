@@ -7,11 +7,11 @@ import type { UpdateCheckResult } from '../shared/types'
  * 发布者在这里填写更新清单地址：
  * 一个返回 JSON 的公网 http/https URL，格式：
  *   { "version": "1.2.3", "url": "https://下载页或安装包直链", "notes": "更新说明" }
- * 例如托管在 GitHub Releases / Gitee / 自建服务器上的 latest.json。
+ * 当前指向本仓库 master 分支的 latest.json（仓库公开后可匿名访问）。
  * 也可不改此常量：通过环境变量 AGENT_SWITCH_UPDATE_URL，或把地址写进
  * userData/update-url.txt（一行一个地址）来覆盖。
  */
-export const UPDATE_MANIFEST_URL = ''
+export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Turing007/agent-switch-cn/master/latest.json'
 
 export function compareVersions(a: string, b: string): number {
   const parse = (v: string) => {

@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "url": "",
-  "notes": ""
+  "url": "https://github.com/Turing007/agent-switch-cn/releases/latest",
+  "notes": "首个发布版本：Provider 管理、模型列表拉取/复制、Agent 切换、检查更新"
 }
