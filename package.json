@@ -1,0 +1,67 @@
+{
+  "name": "agent-switch-cn",
+  "version": "0.1.0",
+  "description": "面向国产 CLI Agent 的模型配置切换器（GUI 桌面应用）",
+  "main": "./out/main/index.js",
+  "author": "agent-switch-cn",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "icon": "node scripts/gen-icon.js",
+    "dist": "npm run build && electron-builder --win portable",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+  },
+  "build": {
+    "appId": "cn.agentswitch.app",
+    "productName": "agent-switch-cn",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "portable": {
+      "artifactName": "agent-switch-cn-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "agent-switch-cn",
+      "artifactName": "agent-switch-cn-setup-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "electron": "^31.3.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "vue": "^3.4.38",
+    "vue-tsc": "^2.1.6"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

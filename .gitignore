@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.DS_Store
+
+# 本地数据与敏感配置（绝不入库）
+config.json
+update-url.txt
+.mimosa/
+.electron-cache/
