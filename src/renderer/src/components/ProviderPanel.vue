@@ -129,6 +129,17 @@ async function copyModel(m: string): Promise<void> {
   }
 }
 
+/** 复制 API Key 到系统剪贴板 */
+async function copyKey(key: string): Promise<void> {
+  if (!key) return
+  try {
+    await window.api.app.copyText(key)
+    props.notify('已复制 API Key', 'ok')
+  } catch (e) {
+    props.notify(`复制失败: ${(e as Error).message}`, 'err')
+  }
+}
+
 /** 复制当前过滤后的全部模型名（每行一个） */
 async function copyAllModels(): Promise<void> {
   const list = filteredModels.value
@@ -174,7 +185,13 @@ function toggleCardModels(id: string): void {
         <div class="base">{{ p.baseUrl }}</div>
         <div class="meta">
           <span v-if="p.modelName">模型: {{ p.modelName }}</span>
-          <span>Key: {{ p.apiKey ? '已配置' : '未配置' }}</span>
+          <span
+            v-if="p.apiKey"
+            class="key-copy"
+            title="点击复制 API Key"
+            @click="copyKey(p.apiKey)"
+          >Key: 已配置 ⧉</span>
+          <span v-else>Key: 未配置</span>
         </div>
         <div v-if="p.models?.length" class="models-toggle" @click="toggleCardModels(p.id)">
           模型列表（{{ p.models.length }}）{{ expandedCards.has(p.id) ? '▴' : '▾' }}
@@ -203,7 +220,17 @@ function toggleCardModels(id: string): void {
         <h3>{{ editing ? '编辑 Provider' : '新增 Provider' }}</h3>
         <label>名称 <input v-model="form.name" placeholder="如 DeepSeek / 智谱 GLM" /></label>
         <label>Base URL <input v-model="form.baseUrl" placeholder="https://api.deepseek.com" /></label>
-        <label>API Key <input v-model="form.apiKey" type="password" placeholder="sk-..." /></label>
+        <label>API Key
+          <div class="model-row">
+            <input v-model="form.apiKey" type="password" placeholder="sk-..." />
+            <button
+              class="ghost small"
+              :disabled="!form.apiKey"
+              title="复制 API Key"
+              @click="copyKey(form.apiKey)"
+            >复制</button>
+          </div>
+        </label>
         <label>官网链接 <input v-model="form.website" placeholder="https://www.deepseek.com（可选）" /></label>
         <label>模型名
           <div class="model-row">
@@ -264,6 +291,8 @@ function toggleCardModels(id: string): void {
 .actions { display: flex; gap: 6px; }
 .base { color: var(--muted); font-size: 12px; word-break: break-all; margin-bottom: 8px; }
 .meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 11px; }
+.key-copy { cursor: pointer; user-select: none; }
+.key-copy:hover { color: var(--accent); }
 .website {
   display: inline-block; margin-top: 10px; font-size: 12px;
   color: var(--accent); text-decoration: none;
