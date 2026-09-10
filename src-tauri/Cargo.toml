@@ -1,6 +1,6 @@
 [package]
 name = "agent-switch-cn"
-version = "0.1.0"
+version = "0.1.1"
 description = "国产 CLI Agent 模型配置切换器"
 edition = "2021"
 
