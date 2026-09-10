@@ -105,8 +105,8 @@ fn quote_toml(v: &str) -> String {
     format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// 带时间戳的备份，返回备份文件路径
-pub fn backup_file(file: &Path, store_dir: &Path) -> Result<PathBuf, String> {
+/// 带时间戳的备份，返回备份文件路径。`backup_dir` 即备份目录本身
+pub fn backup_file(file: &Path, backup_dir: &Path) -> Result<PathBuf, String> {
     if !file.exists() {
         return Err(format!("配置文件不存在: {}", file.display()));
     }
@@ -119,8 +119,7 @@ pub fn backup_file(file: &Path, store_dir: &Path) -> Result<PathBuf, String> {
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let backup_dir = store_dir.join("backups");
-    fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(backup_dir).map_err(|e| e.to_string())?;
     let backup_path = backup_dir.join(format!("{dir_name}_{file_name}.{ts}"));
     fs::copy(file, &backup_path).map_err(|e| e.to_string())?;
     Ok(backup_path)
@@ -196,4 +195,29 @@ pub fn read_json_object(file: &Path) -> Map<String, Value> {
         .ok()
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 备份必须直接落在传入的备份目录里，不能再嵌套一层 backups/
+    #[test]
+    fn backup_file_writes_into_given_dir() {
+        let root = std::env::temp_dir().join("agent-switch-test-backup-path");
+        let _ = fs::remove_dir_all(&root);
+        let cfg_dir = root.join("cfg");
+        fs::create_dir_all(&cfg_dir).unwrap();
+        let file = cfg_dir.join("settings.json");
+        fs::write(&file, "{}").unwrap();
+
+        let backup_dir = root.join("backups");
+        let bp = backup_file(&file, &backup_dir).unwrap();
+
+        assert_eq!(bp.parent().unwrap(), backup_dir);
+        assert!(bp.exists());
+        assert!(!backup_dir.join("backups").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
