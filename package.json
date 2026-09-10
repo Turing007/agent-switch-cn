@@ -1,71 +1,28 @@
 {
   "name": "agent-switch-cn",
   "version": "0.1.0",
-  "description": "面向国产 CLI Agent 的模型配置切换器（GUI 桌面应用）",
-  "main": "./out/main/index.js",
+  "description": "国产 CLI Agent 模型配置切换器（Tauri v2 / Rust 桌面应用）",
+  "private": true,
   "author": "agent-switch-cn",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "start": "electron-vite preview",
+    "build": "vite build",
+    "dev": "vite build --watch",
     "icon": "node scripts/gen-icon.js",
-    "dist": "npm run build && electron-builder --win",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
-  },
-  "build": {
-    "appId": "cn.agentswitch.app",
-    "productName": "agent-switch-cn",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "out/**",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/icon.png",
-        "to": "icon.png"
-      }
-    ],
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        "portable",
-        "nsis"
-      ]
-    },
-    "portable": {
-      "artifactName": "agent-switch-cn-${version}.exe"
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "agent-switch-cn",
-      "artifactName": "agent-switch-cn-setup-${version}.exe"
-    }
+    "tauri:build": "npm run build && tauri build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json --composite false"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1",
-    "@vitejs/plugin-vue": "^5.1.4",
     "@tauri-apps/cli": "^2.1.0",
-    "electron": "^31.3.1",
-    "electron-builder": "^26.15.3",
-    "electron-vite": "^2.3.0",
+    "@vitejs/plugin-vue": "^5.1.4",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
     "vue": "^3.4.38",
     "vue-tsc": "^2.1.6"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.1.0",
-    "ws": "^8.21.3"
+    "@tauri-apps/api": "^2.1.0"
   }
 }

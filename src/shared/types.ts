@@ -100,3 +100,37 @@ export interface UpdateCheckResult {
   /** true = 检查过程出错（网络/配置/清单格式） */
   error?: boolean
 }
+
+/**
+ * 渲染层到后端的统一桥接接口。
+ * Tauri 构建下由 src/renderer/src/main.ts 用 invoke 实现；
+ * 接口形状与后端命令一一对应。
+ */
+export interface AppApi {
+  providers: {
+    list(): Promise<Provider[]>
+    save(p: Provider): Promise<Provider>
+    delete(id: string): Promise<boolean>
+  }
+  models: {
+    fetch(baseUrl: string, apiKey: string): Promise<string[]>
+  }
+  app: {
+    openExternal(url: string): Promise<boolean>
+    copyText(text: string): Promise<boolean>
+    checkUpdate(): Promise<UpdateCheckResult>
+  }
+  agents: {
+    list(): Promise<AgentDef[]>
+    detect(): Promise<AgentInstance[]>
+    status(i: AgentInstance): Promise<SwitchStatus>
+    switch(agentId: string, providerId: string): Promise<SwitchResult>
+  }
+  backups: {
+    list(): Promise<string[]>
+  }
+  trae: {
+    preflight(): Promise<unknown>
+    readModel(): Promise<unknown>
+  }
+}
