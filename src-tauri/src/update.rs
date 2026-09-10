@@ -3,14 +3,19 @@ use serde_json::Value;
 use std::time::Duration;
 
 /// 带一次重试的 GET：掩盖 raw.githubusercontent 等源的偶发网络抖动。
+/// headers 在每次尝试时重新附加（RequestBuilder 不可 Clone）。
 async fn get_with_retry(
     client: &reqwest::Client,
     url: &str,
-    accept: &str,
+    headers: &[(&str, &str)],
 ) -> Result<reqwest::Response, String> {
     let mut last_err = String::new();
     for attempt in 0..2 {
-        match client.get(url).header("Accept", accept).send().await {
+        let mut req = client.get(url);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        match req.send().await {
             Ok(r) => return Ok(r),
             Err(e) => last_err = e.to_string(),
         }
@@ -32,11 +37,12 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
     };
     let url = assert_public_http_url(&url_s).await?;
     let client = http_client(15)?;
-    let mut req = client.get(url.as_str()).header("Accept", "application/json");
+    let auth = format!("Bearer {api_key}");
+    let mut headers: Vec<(&str, &str)> = vec![("Accept", "application/json")];
     if !api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {api_key}"));
+        headers.push(("Authorization", auth.as_str()));
     }
-    let res = get_with_retry(&client, url.as_str(), "application/json")
+    let res = get_with_retry(&client, url.as_str(), &headers)
         .await
         .map_err(|e| format!("拉取失败: {e}"))?;
     let status = res.status();
@@ -151,7 +157,7 @@ pub async fn check_for_update(data_dir: &std::path::Path, current_version: &str)
         Ok(c) => c,
         Err(e) => return base(format!("检查更新失败: {e}"), true),
     };
-    let res = match get_with_retry(&client, url.as_str(), "application/json").await {
+    let res = match get_with_retry(&client, url.as_str(), &[("Accept", "application/json")]).await {
         Ok(r) => r,
         Err(e) => return base(format!("检查更新失败: {e}"), true),
     };
@@ -194,5 +200,55 @@ pub async fn check_for_update(data_dir: &std::path::Path, current_version: &str)
         notes,
         message,
         error: Some(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// 用本机回环服务捕获真实请求，确认调用方传入的请求头确实被发出
+    /// （曾出现 headers 被丢弃、导致需鉴权的 /models 一律 401 的问题）。
+    #[test]
+    fn get_with_retry_sends_caller_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut req = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while let Ok(n) = sock.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                req.extend_from_slice(&chunk[..n]);
+                if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let _ = sock.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+            );
+            String::from_utf8_lossy(&req).to_string()
+        });
+
+        // 独立的 no_proxy client：避免系统代理把回环请求劫走
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://{addr}/models");
+        let res = tauri::async_runtime::block_on(get_with_retry(
+            &client,
+            &url,
+            &[("Accept", "application/json"), ("Authorization", "Bearer probe-token")],
+        ))
+        .unwrap();
+        assert_eq!(res.status().as_u16(), 200);
+
+        let captured = server.join().unwrap();
+        assert!(
+            captured.to_lowercase().contains("authorization: bearer probe-token"),
+            "请求头未被发送，捕获到的请求：\n{captured}"
+        );
     }
 }
