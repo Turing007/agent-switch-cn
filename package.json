@@ -10,7 +10,9 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "icon": "node scripts/gen-icon.js",
-    "dist": "npm run build && electron-builder --win portable",
+    "dist": "npm run build && electron-builder --win",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web"
@@ -53,6 +55,7 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.1.4",
+    "@tauri-apps/cli": "^2.1.0",
     "electron": "^31.3.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
@@ -62,6 +65,7 @@
     "vue-tsc": "^2.1.6"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.1.0",
     "ws": "^8.21.3"
   }
 }

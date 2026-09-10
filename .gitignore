@@ -10,3 +10,5 @@ config.json
 update-url.txt
 .mimosa/
 .electron-cache/
+src-tauri/target/
+src-tauri/gen/
