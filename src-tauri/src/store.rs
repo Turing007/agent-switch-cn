@@ -18,12 +18,45 @@ pub struct Provider {
     pub model_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models: Option<Vec<String>>,
+    /// 勾选的、要注册到 agent 的模型（第一项即默认模型）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_names: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
     #[serde(default)]
     pub created_at: i64,
     #[serde(default)]
     pub updated_at: i64,
+}
+
+impl Provider {
+    /// 默认模型：供只能填一个模型的 agent 使用（modelName 优先，其次勾选列表首项）
+    pub fn default_model(&self) -> Option<String> {
+        if let Some(m) = self.model_name.as_ref().filter(|m| !m.is_empty()) {
+            return Some(m.clone());
+        }
+        self.model_names
+            .as_ref()?
+            .iter()
+            .find(|m| !m.is_empty())
+            .cloned()
+    }
+
+    /// 要注册到 agent 的模型集合：默认模型在最前，其余按勾选顺序，去重
+    pub fn selected_models(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        if let Some(m) = self.default_model() {
+            out.push(m);
+        }
+        if let Some(list) = &self.model_names {
+            for m in list {
+                if !m.is_empty() && !out.contains(m) {
+                    out.push(m.clone());
+                }
+            }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -8,9 +8,11 @@ export interface Provider {
   apiKey: string        // 明文存储到本地 JSON（MVP 决策）
   /** 可附加的自定义请求头（可选） */
   headers?: Record<string, string>
-  /** 模型名（可选，覆盖 agent 默认） */
+  /** 默认模型：只能填一个模型的 agent（CodeGeeX / 通用 CLI / Trae）用它，等同 modelNames 首项 */
   modelName?: string
-  /** 拉取到的模型 id 列表缓存（可选，便于回显选择） */
+  /** 勾选的、要注册到 agent 的模型（首项为默认模型）；Qoder / ZCode 会全部写入 */
+  modelNames?: string[]
+  /** 拉取到的模型 id 列表缓存（可选，便于回显选择，不代表已勾选） */
   models?: string[]
   /** 官网链接（可选，卡片上可点击打开） */
   website?: string

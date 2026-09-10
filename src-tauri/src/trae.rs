@@ -366,7 +366,7 @@ pub async fn switch_to(provider: &crate::store::Provider) -> Result<SwitchOutcom
 
 fn switch_to_sync(provider: &crate::store::Provider) -> Result<SwitchOutcome, String> {
     let port = TRAE_DEBUG_PORT;
-    let Some(model_label) = provider.model_name.clone() else {
+    let Some(model_label) = provider.default_model() else {
         return Ok(SwitchOutcome {
             ok: false,
             message: "Trae 切换需要先填写“模型 ID”".into(),

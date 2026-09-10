@@ -11,7 +11,14 @@ const fetching = ref(false)
 const fetchedModels = ref<string[]>([])
 const modelFilter = ref('')
 
-const form = ref({ name: '', baseUrl: '', apiKey: '', modelName: '', website: '' })
+const form = ref({
+  name: '',
+  baseUrl: '',
+  apiKey: '',
+  modelName: '',
+  website: '',
+  modelNames: [] as string[]
+})
 
 onMounted(() => ensureProvidersLoaded())
 
@@ -27,9 +34,42 @@ const filteredModels = computed(() => {
   return pickerModels.value.filter((m) => m.toLowerCase().includes(kw))
 })
 
+/** 有勾选时，默认模型跟随勾选首项；无勾选时保留手动输入的模型名 */
+function syncDefaultModel(): void {
+  if (form.value.modelNames.length) form.value.modelName = form.value.modelNames[0]
+}
+
+function toggleModel(m: string): void {
+  const list = form.value.modelNames
+  const i = list.indexOf(m)
+  if (i >= 0) list.splice(i, 1)
+  else list.push(m)
+  syncDefaultModel()
+}
+
+/** 勾选当前搜索结果 */
+function selectAllModels(): void {
+  for (const m of filteredModels.value) {
+    if (!form.value.modelNames.includes(m)) form.value.modelNames.push(m)
+  }
+  syncDefaultModel()
+}
+
+function clearModels(): void {
+  form.value.modelNames = []
+}
+
+/** 卡片上的模型摘要：多选时显示「默认模型 等 N 个」 */
+function modelSummary(p: Provider): string {
+  const total = p.modelNames?.length ?? 0
+  const first = p.modelName ?? p.modelNames?.[0] ?? ''
+  if (!first) return ''
+  return total > 1 ? `${first} 等 ${total} 个` : first
+}
+
 function openCreate(): void {
   editing.value = null
-  form.value = { name: '', baseUrl: '', apiKey: '', modelName: '', website: '' }
+  form.value = { name: '', baseUrl: '', apiKey: '', modelName: '', website: '', modelNames: [] }
   fetchedModels.value = []
   modelFilter.value = ''
   showForm.value = true
@@ -42,7 +82,9 @@ function openEdit(p: Provider): void {
     baseUrl: p.baseUrl,
     apiKey: p.apiKey,
     modelName: p.modelName ?? '',
-    website: p.website ?? ''
+    website: p.website ?? '',
+    // 旧数据只有单个 modelName，回退成单元素勾选列表
+    modelNames: [...(p.modelNames ?? (p.modelName ? [p.modelName] : []))]
   }
   fetchedModels.value = []
   modelFilter.value = ''
@@ -58,14 +100,21 @@ async function save(): Promise<void> {
     props.notify('官网链接需以 http:// 或 https:// 开头', 'err')
     return
   }
+  const typedDefault = form.value.modelName.trim()
+  const selected = form.value.modelNames.length
+    ? [...form.value.modelNames]
+    : typedDefault
+      ? [typedDefault]
+      : []
   const payload: Provider = {
     id: editing.value?.id ?? '',
     name: form.value.name,
     baseUrl: form.value.baseUrl,
     apiKey: form.value.apiKey,
-    modelName: form.value.modelName || undefined,
+    modelName: selected[0] || undefined,
+    modelNames: selected.length ? selected : undefined,
     website: form.value.website.trim() || undefined,
-    // 注意：必须是普通数组。Vue 响应式数组是 Proxy，无法被 Electron IPC 结构化克隆
+    // 注意：必须是普通数组。Vue 响应式数组是 Proxy，无法被 IPC 结构化克隆
     models: pickerModels.value.length ? [...pickerModels.value] : undefined,
     createdAt: editing.value?.createdAt ?? 0,
     updatedAt: Date.now()
@@ -98,9 +147,8 @@ async function fetchModels(): Promise<void> {
     if (models.length === 0) {
       props.notify('未拉到模型列表，请检查接口是否支持 /models', 'err')
     } else {
-      if (!form.value.modelName || !models.includes(form.value.modelName)) {
-        form.value.modelName = models[0]
-      }
+      if (!form.value.modelNames.length) form.value.modelNames = [models[0]]
+      syncDefaultModel()
       props.notify(`已拉取 ${models.length} 个模型`)
     }
   } catch (e) {
@@ -184,7 +232,7 @@ function toggleCardModels(id: string): void {
         </div>
         <div class="base">{{ p.baseUrl }}</div>
         <div class="meta">
-          <span v-if="p.modelName">模型: {{ p.modelName }}</span>
+          <span v-if="modelSummary(p)">模型: {{ modelSummary(p) }}</span>
           <span
             v-if="p.apiKey"
             class="key-copy"
@@ -232,12 +280,12 @@ function toggleCardModels(id: string): void {
           </div>
         </label>
         <label>官网链接 <input v-model="form.website" placeholder="https://www.deepseek.com（可选）" /></label>
-        <label>模型名
+        <label>默认模型
           <div class="model-row">
             <input
               v-model="form.modelName"
               list="model-options"
-              :placeholder="pickerModels.length ? '从下方列表选择或手动输入' : '如 deepseek-chat，可点击拉取'"
+              :placeholder="pickerModels.length ? '从下方列表勾选，或手动输入' : '如 deepseek-chat，可点击拉取'"
             />
             <button class="ghost small" :disabled="fetching" @click="fetchModels">
               {{ fetching ? '拉取中…' : '拉取模型' }}
@@ -251,19 +299,25 @@ function toggleCardModels(id: string): void {
         <!-- 拉取成功后展示模型列表 -->
         <div v-if="pickerModels.length" class="model-picker">
           <div class="picker-head">
-            <span>模型列表（共 {{ pickerModels.length }} 个）</span>
+            <span>模型列表（共 {{ pickerModels.length }} 个，已选 {{ form.modelNames.length }}）</span>
             <input v-model="modelFilter" class="picker-filter" placeholder="搜索过滤…" />
+            <button class="ghost small" @click="selectAllModels">全选</button>
+            <button class="ghost small" :disabled="!form.modelNames.length" @click="clearModels">清空</button>
             <button class="ghost small" @click="copyAllModels">复制全部</button>
+          </div>
+          <div class="picker-hint">
+            勾选多个模型会全部写入 Qoder / ZCode；第一个勾选项作为默认模型（供 CodeGeeX、通用 CLI Agent、Trae 使用）。
           </div>
           <div v-if="filteredModels.length" class="model-list">
             <div
               v-for="m in filteredModels"
               :key="m"
               class="model-item"
-              :class="{ active: m === form.modelName }"
-              :title="`点击选择，按钮复制：${m}`"
-              @click="form.modelName = m"
+              :class="{ active: form.modelNames.includes(m) }"
+              :title="`点击勾选/取消，按钮复制：${m}`"
+              @click="toggleModel(m)"
             >
+              <span class="mi-check">{{ form.modelNames.includes(m) ? '✓' : '' }}</span>
               <span class="mi-name">{{ m }}</span>
               <button class="mi-copy" title="复制模型名" @click.stop="copyModel(m)">复制</button>
             </div>
@@ -385,10 +439,15 @@ function toggleCardModels(id: string): void {
   margin-bottom: 12px; overflow: hidden; background: var(--panel-2);
 }
 .picker-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
   flex-wrap: wrap;
   padding: 9px 12px; font-size: 11.5px; color: var(--muted);
   border-bottom: 1px solid var(--border);
+}
+.picker-head > span:first-child { margin-right: auto; }
+.picker-hint {
+  padding: 8px 12px; font-size: 11px; line-height: 1.6; color: var(--muted);
+  background: var(--accent-soft); border-bottom: 1px solid var(--border);
 }
 .picker-filter {
   width: 150px; padding: 5px 10px; font-size: 12px;
@@ -398,7 +457,7 @@ function toggleCardModels(id: string): void {
 
 .model-list { max-height: 240px; overflow-y: auto; }
 .model-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; font-size: 12px; color: var(--text);
   cursor: pointer; transition: background 0.15s var(--ease);
 }
@@ -406,6 +465,9 @@ function toggleCardModels(id: string): void {
 .model-item:hover { background: var(--panel-3); }
 .model-item.active {
   color: var(--accent); background: var(--accent-soft); font-weight: 600;
+}
+.mi-check {
+  flex: none; width: 14px; text-align: center; font-size: 11px; color: var(--accent);
 }
 .mi-name {
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

@@ -34,15 +34,28 @@ pub struct AgentDef {
     pub kind: AgentKind,
     /// ZCode 需要整块 provider 写入/读取
     pub custom_zcode: bool,
+    /// Qoder 需要整块 provider 写入/读取
+    pub custom_qoder: bool,
 }
 
 pub const ZCODE_PROVIDER_PREFIX: &str = "agent-switch:";
+/// Qoder 自定义 provider 的 key 前缀（与 Qoder 自身生成规则一致）
+pub const QODER_PROVIDER_PREFIX: &str = "qoder-custom-";
 
 pub fn zcode_kind(base_url: &str) -> &'static str {
     if base_url.contains("anthropic") || base_url.contains("#fh") {
         "anthropic"
     } else {
         "openai-compatible"
+    }
+}
+
+/// Qoder 的 protocol 取值域（由 Qoder 前端校验函数限定）：openai | openai-responses | anthropic
+pub fn qoder_protocol(base_url: &str) -> &'static str {
+    if base_url.contains("anthropic") {
+        "anthropic"
+    } else {
+        "openai"
     }
 }
 
@@ -80,6 +93,7 @@ pub fn codegeex_agent() -> AgentDef {
         ],
         kind: AgentKind::File,
         custom_zcode: false,
+        custom_qoder: false,
     }
 }
 
@@ -117,6 +131,7 @@ pub fn generic_cli_agent() -> AgentDef {
         ],
         kind: AgentKind::File,
         custom_zcode: false,
+        custom_qoder: false,
     }
 }
 
@@ -129,6 +144,20 @@ pub fn zcode_agent() -> AgentDef {
         fields: vec![],
         kind: AgentKind::File,
         custom_zcode: true,
+        custom_qoder: false,
+    }
+}
+
+pub fn qoder_agent() -> AgentDef {
+    AgentDef {
+        id: "qoder",
+        name: "Qoder (桌面 IDE)",
+        description: "Qoder 桌面版，通过 ~/.qoder/settings.json 的 providers 区块注册自定义模型（非破坏性写入，需在 Qoder 模型列表中选用一次）",
+        config_paths: vec!["{home}/.qoder/settings.json"],
+        fields: vec![],
+        kind: AgentKind::File,
+        custom_zcode: false,
+        custom_qoder: true,
     }
 }
 
@@ -141,6 +170,7 @@ pub fn trae_agent() -> AgentDef {
         fields: vec![],
         kind: AgentKind::Cdp,
         custom_zcode: false,
+        custom_qoder: false,
     }
 }
 
@@ -148,6 +178,7 @@ pub fn agent_registry() -> Vec<AgentDef> {
     vec![
         codegeex_agent(),
         zcode_agent(),
+        qoder_agent(),
         trae_agent(),
         generic_cli_agent(),
     ]

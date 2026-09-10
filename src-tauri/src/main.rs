@@ -66,23 +66,32 @@ fn providers_save(state: State<AppState>, p: Provider) -> Result<Provider, Strin
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .filter(|s| s.starts_with("http://") || s.starts_with("https://"));
-    if let Some(models) = provider.models.take() {
-        let mut seen = std::collections::HashSet::new();
-        let cleaned: Vec<String> = models
-            .into_iter()
-            .map(|m| m.trim().to_string())
-            .filter(|m| !m.is_empty())
-            .filter(|m| seen.insert(m.clone()))
-            .take(500)
-            .collect();
-        provider.models = if cleaned.is_empty() { None } else { Some(cleaned) };
-    }
+    provider.models = clean_models(provider.models.take());
+    provider.model_names = clean_models(provider.model_names.take());
     provider.updated_at = now;
     if provider.created_at == 0 {
         provider.created_at = now;
     }
     state.store.lock().unwrap().upsert_provider(provider.clone())?;
     Ok(provider)
+}
+
+/// 模型名列表清洗：去首尾空白、丢弃空项、去重、限制条数
+fn clean_models(models: Option<Vec<String>>) -> Option<Vec<String>> {
+    let models = models?;
+    let mut seen = std::collections::HashSet::new();
+    let cleaned: Vec<String> = models
+        .into_iter()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .filter(|m| seen.insert(m.clone()))
+        .take(500)
+        .collect();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
 }
 
 #[tauri::command]

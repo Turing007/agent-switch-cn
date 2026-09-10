@@ -1,4 +1,7 @@
-use crate::agents::{agent_registry, get_agent_def, zcode_kind, AgentDef, AgentField, AgentKind, ZCODE_PROVIDER_PREFIX};
+use crate::agents::{
+    agent_registry, get_agent_def, qoder_protocol, zcode_kind, AgentDef, AgentField, AgentKind,
+    QODER_PROVIDER_PREFIX, ZCODE_PROVIDER_PREFIX,
+};
 use crate::fsutil::{
     backup_file, detect_format, file_exists, get_by_path, read_json, read_json_object, read_toml_flat,
     resolve_tmpl, set_by_path, write_json, write_toml_flat,
@@ -102,7 +105,7 @@ impl<'a> AgentService<'a> {
         match f.source.as_str() {
             "baseUrl" => Some(p.base_url.clone()),
             "apiKey" => Some(p.api_key.clone()),
-            "modelName" => p.model_name.clone(),
+            "modelName" => p.default_model(),
             "const" => f.value.clone(),
             s if s.starts_with("header:") => {
                 let name = s.strip_prefix("header:").unwrap_or(s);
@@ -116,6 +119,9 @@ impl<'a> AgentService<'a> {
     pub fn write_provider_to_config(&self, def: &AgentDef, file: &Path, p: &Provider) -> Result<(), String> {
         if def.custom_zcode {
             return self.zcode_apply(file, p);
+        }
+        if def.custom_qoder {
+            return self.qoder_apply(file, p);
         }
         let format = detect_format(file);
         if format == "toml" {
@@ -175,9 +181,9 @@ impl<'a> AgentService<'a> {
         }
 
         let mut models = Map::new();
-        if let Some(model_name) = &p.model_name {
+        for model_name in p.selected_models() {
             models.insert(
-                model_name.clone(),
+                model_name,
                 json!({
                     "limit": { "context": 999999, "output": 32000 },
                     "modalities": { "input": ["text", "image"], "output": ["text"] },
@@ -202,6 +208,62 @@ impl<'a> AgentService<'a> {
         }
         providers.insert(target_key, entry);
         data.insert("provider".into(), Value::Object(providers));
+        write_json(file, &Value::Object(data))
+    }
+
+    /// Qoder 自定义 provider 注册（非破坏性：仅新增/更新本工具管理的那一条）
+    /// 写入形状与 Qoder 前端序列化函数一致：
+    /// type 恒为 openai-compatible，authType 由 protocol 决定，baseUrl 仅接受 https。
+    /// 勾选的模型全部写入 models 数组，provider 级的 model 取默认模型。
+    fn qoder_apply(&self, file: &Path, p: &Provider) -> Result<(), String> {
+        let models = p.selected_models();
+        let Some(default_model) = models.first() else {
+            return Err("Qoder 需要先填写或勾选「模型名」".into());
+        };
+        if !p.base_url.starts_with("https://") {
+            return Err("Qoder 仅接受 https 开头的 Base URL".into());
+        }
+        let protocol = qoder_protocol(&p.base_url);
+        let auth_type = if protocol == "anthropic" { "api-key" } else { "bearer" };
+
+        let mut data = read_json_object(file);
+        let mut providers = data
+            .get("providers")
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        let key = format!("{QODER_PROVIDER_PREFIX}{}", p.id);
+        let model_entries: Vec<Value> = models
+            .iter()
+            .map(|m| {
+                json!({
+                    "model": m,
+                    "displayName": m,
+                    "capabilities": {
+                        "vision": false,
+                        "thinking": {
+                            "modes": [],
+                            "supportsEffort": false,
+                            "supportedEffortLevels": []
+                        }
+                    }
+                })
+            })
+            .collect();
+        providers.insert(
+            key.clone(),
+            json!({
+                "providerId": key,
+                "baseUrl": p.base_url,
+                "apiKey": p.api_key,
+                "type": "openai-compatible",
+                "protocol": protocol,
+                "authType": auth_type,
+                "displayName": p.name,
+                "model": default_model,
+                "models": model_entries
+            }),
+        );
+        data.insert("providers".into(), Value::Object(providers));
         write_json(file, &Value::Object(data))
     }
 
@@ -249,6 +311,36 @@ impl<'a> AgentService<'a> {
         }
     }
 
+    /// Qoder 当前状态：Qoder 不把「选中的 provider」写回 settings.json，
+    /// 因此以本工具记录的 active 为准，并校验该条目仍存在于配置文件中。
+    fn qoder_read_status(&self, file: &Path, agent_id: &str) -> SwitchStatus {
+        let none = SwitchStatus { configured: false, provider_name: None, model_name: None };
+        let Some(p) = self
+            .store
+            .get_active(agent_id)
+            .and_then(|id| self.store.get_provider(&id))
+        else {
+            return none;
+        };
+        let Ok(data) = read_json(file) else {
+            return none;
+        };
+        let key = format!("{QODER_PROVIDER_PREFIX}{}", p.id);
+        let present = data
+            .get("providers")
+            .and_then(|v| v.as_object())
+            .map(|m| m.contains_key(&key))
+            .unwrap_or(false);
+        if !present {
+            return none;
+        }
+        SwitchStatus {
+            configured: true,
+            provider_name: Some(p.name.clone()),
+            model_name: p.default_model(),
+        }
+    }
+
     /// 检测 agent 当前是否已指向某个已配置的 provider
     pub fn read_status(&self, instance: &AgentInstance) -> SwitchStatus {
         let Some(def) = get_agent_def(&instance.agent_id) else {
@@ -268,6 +360,9 @@ impl<'a> AgentService<'a> {
         }
         if def.custom_zcode {
             return self.zcode_read_status(Path::new(&instance.config_file_path));
+        }
+        if def.custom_qoder {
+            return self.qoder_read_status(Path::new(&instance.config_file_path), def.id);
         }
         let file = Path::new(&instance.config_file_path);
         let mut values: Map<String, Value> = Map::new();
@@ -363,13 +458,181 @@ impl<'a> AgentService<'a> {
         match result {
             Ok(()) => {
                 // active 状态由命令层写回全局 Store（此处 store 为只读借用）
+                let message = if def.custom_qoder {
+                    format!(
+                        "已注册 {} 自定义模型「{}」，请在 Qoder 的模型列表中选择它",
+                        def.name, provider.name
+                    )
+                } else {
+                    format!("已切换 {} → {}", def.name, provider.name)
+                };
                 SwitchResult {
                     ok: true,
-                    message: Some(format!("已切换 {} → {}", def.name, provider.name)),
+                    message: Some(message),
                     backup_path,
                 }
             }
             Err(e) => SwitchResult { ok: false, message: Some(format!("切换失败: {e}")), backup_path: None },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("agent-switch-test-{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn provider(base_url: &str, model_name: Option<&str>) -> Provider {
+        Provider {
+            id: "abc".into(),
+            name: "测试源".into(),
+            base_url: base_url.into(),
+            api_key: "sk-test".into(),
+            model_name: model_name.map(|s| s.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn qoder_apply_preserves_other_providers_and_plugins() {
+        let dir = scratch("qoder-nondestructive");
+        let file = dir.join("settings.json");
+        std::fs::write(
+            &file,
+            r#"{"enabledPlugins":{"demo@bundler":true},"providers":{"qoder-custom-keep":{"baseUrl":"https://keep.example.com"}}}"#,
+        )
+        .unwrap();
+
+        let store = Store::load(&dir);
+        AgentService::new(&store)
+            .qoder_apply(&file, &provider("https://api.example.com/v1", Some("m1")))
+            .unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["enabledPlugins"]["demo@bundler"], json!(true));
+        assert_eq!(
+            v["providers"]["qoder-custom-keep"]["baseUrl"],
+            json!("https://keep.example.com")
+        );
+
+        let entry = &v["providers"]["qoder-custom-abc"];
+        assert_eq!(entry["providerId"], json!("qoder-custom-abc"));
+        assert_eq!(entry["baseUrl"], json!("https://api.example.com/v1"));
+        assert_eq!(entry["apiKey"], json!("sk-test"));
+        assert_eq!(entry["displayName"], json!("测试源"));
+        assert_eq!(entry["type"], json!("openai-compatible"));
+        assert_eq!(entry["protocol"], json!("openai"));
+        assert_eq!(entry["authType"], json!("bearer"));
+        assert_eq!(entry["model"], json!("m1"));
+        assert_eq!(entry["models"][0]["model"], json!("m1"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn qoder_apply_marks_anthropic_endpoints() {
+        let dir = scratch("qoder-anthropic");
+        let file = dir.join("settings.json");
+        let store = Store::load(&dir);
+        AgentService::new(&store)
+            .qoder_apply(&file, &provider("https://api.anthropic.com/v1", Some("claude")))
+            .unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["providers"]["qoder-custom-abc"]["protocol"], json!("anthropic"));
+        assert_eq!(v["providers"]["qoder-custom-abc"]["authType"], json!("api-key"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn qoder_apply_rejects_invalid_input() {
+        let dir = scratch("qoder-reject");
+        let file = dir.join("settings.json");
+        let store = Store::load(&dir);
+        let svc = AgentService::new(&store);
+
+        assert!(svc
+            .qoder_apply(&file, &provider("http://api.example.com", Some("m1")))
+            .is_err());
+        assert!(svc
+            .qoder_apply(&file, &provider("https://api.example.com", None))
+            .is_err());
+        assert!(!file.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 多模型：默认模型排在最前，其余按勾选顺序；provider.model 取默认模型
+    #[test]
+    fn qoder_apply_writes_all_selected_models() {
+        let dir = scratch("qoder-multi");
+        let file = dir.join("settings.json");
+        let store = Store::load(&dir);
+        let mut p = provider("https://api.example.com/v1", Some("m2"));
+        p.model_names = Some(vec!["m1".into(), "m2".into(), "m3".into()]);
+
+        AgentService::new(&store).qoder_apply(&file, &p).unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let entry = &v["providers"]["qoder-custom-abc"];
+        assert_eq!(entry["model"], json!("m2"));
+
+        let models = entry["models"].as_array().unwrap();
+        let names: Vec<&str> = models
+            .iter()
+            .map(|m| m["model"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, vec!["m2", "m1", "m3"]);
+        assert_eq!(models[0]["displayName"], json!("m2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 未填写 modelName 时，勾选列表首项即为默认模型
+    #[test]
+    fn qoder_apply_defaults_to_first_checked_model() {
+        let dir = scratch("qoder-multi-default");
+        let file = dir.join("settings.json");
+        let store = Store::load(&dir);
+        let mut p = provider("https://api.example.com/v1", None);
+        p.model_names = Some(vec!["only-one".into(), "another".into()]);
+
+        AgentService::new(&store).qoder_apply(&file, &p).unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let entry = &v["providers"]["qoder-custom-abc"];
+        assert_eq!(entry["model"], json!("only-one"));
+        assert_eq!(entry["models"].as_array().unwrap().len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ZCode：勾选的模型全部写入 provider.models
+    #[test]
+    fn zcode_apply_writes_all_selected_models() {
+        let dir = scratch("zcode-multi");
+        let file = dir.join("zcode.json");
+        let store = Store::load(&dir);
+        let mut p = provider("https://api.example.com/v1", Some("m1"));
+        p.model_names = Some(vec!["m1".into(), "m2".into()]);
+
+        AgentService::new(&store).zcode_apply(&file, &p).unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let models = v["provider"]["agent-switch:abc"]["models"]
+            .as_object()
+            .unwrap();
+        assert_eq!(models.len(), 2);
+        assert!(models.contains_key("m1"));
+        assert!(models.contains_key("m2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
