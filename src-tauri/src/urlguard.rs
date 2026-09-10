@@ -122,12 +122,63 @@ fn is_reserved_ipv6(ip: std::net::Ipv6Addr) -> bool {
     false
 }
 
-/// 构建统一请求客户端：禁用自动重定向（防 30x 绕过校验）、限制超时。
+/// 读取 Windows 系统代理设置（与 Electron/Chromium 行为一致：
+/// 用户的 Clash/V2Ray 等客户端开启系统代理后，应用出站请求自动走代理，
+/// 否则会绕过代理直连，在受限网络下无法访问 GitHub 等站点）。
+/// 环境变量 HTTP_PROXY/HTTPS_PROXY 由 reqwest 自身识别，此处只补注册表来源。
+fn system_proxy_url() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+        let key = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+            .ok()?;
+        let enabled: u32 = key.get_value("ProxyEnable").ok()?;
+        if enabled == 0 {
+            return None;
+        }
+        let server: String = key.get_value("ProxyServer").ok()?;
+        // 支持 "127.0.0.1:7892" 与 "http=127.0.0.1:7892;https=127.0.0.1:7892" 两种写法
+        let pick = server
+            .split(';')
+            .find_map(|part| {
+                let (k, v) = part.split_once('=')?;
+                if k.eq_ignore_ascii_case("https") || k.eq_ignore_ascii_case("http") {
+                    Some(v.trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| server.trim().to_string());
+        let pick = pick.trim();
+        if pick.is_empty() || pick.to_ascii_lowercase().starts_with("socks") {
+            // SOCKS 代理未启用对应特性，保持直连行为
+            return None;
+        }
+        if pick.starts_with("http://") || pick.starts_with("https://") {
+            return Some(pick.to_string());
+        }
+        return Some(format!("http://{pick}"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
+/// 构建统一请求客户端：禁用自动重定向（防 30x 绕过校验）、限制超时、遵循系统代理。
 /// 仅用于已通过 assert_public_http_url 校验的地址，或固定本机回环的控制通道。
 pub fn http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .timeout(std::time::Duration::from_secs(timeout_secs));
+    if let Some(proxy) = system_proxy_url() {
+        builder = builder.proxy(
+            reqwest::Proxy::all(&proxy).map_err(|e| format!("系统代理地址无效: {e}"))?,
+        );
+    }
+    builder
         .build()
         .map_err(|e: reqwest::Error| io::Error::new(io::ErrorKind::Other, e).to_string())
 }
