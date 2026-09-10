@@ -281,76 +281,151 @@ function toggleCardModels(id: string): void {
 </template>
 
 <style scoped>
-.panel { padding: 20px; max-width: 900px; margin: 0 auto; }
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-.empty { color: var(--muted); text-align: center; padding: 48px 0; border: 1px dashed var(--border); border-radius: var(--radius); }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.name { font-weight: 600; }
-.actions { display: flex; gap: 6px; }
-.base { color: var(--muted); font-size: 12px; word-break: break-all; margin-bottom: 8px; }
-.meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 11px; }
-.key-copy { cursor: pointer; user-select: none; }
+.panel { padding: 24px; max-width: 920px; margin: 0 auto; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+
+.empty {
+  color: var(--muted); text-align: center; padding: 56px 24px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 12.5px;
+}
+
+/* 卡片：白色磁贴 + 悬浮轻抬升 */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: box-shadow 0.24s var(--ease), transform 0.24s var(--ease),
+    border-color 0.24s var(--ease);
+}
+.card:hover {
+  box-shadow: var(--shadow-1);
+  transform: translateY(-1px);
+  border-color: transparent;
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.name { font-weight: 600; font-size: 14px; letter-spacing: -0.016em; }
+.actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s var(--ease); }
+.card:hover .actions, .card:focus-within .actions { opacity: 1; }
+.actions button { padding: 4px 10px; font-size: 11.5px; }
+
+.base {
+  font-family: var(--mono); color: var(--muted); font-size: 11px;
+  word-break: break-all; margin-bottom: 8px; letter-spacing: -0.01em;
+}
+.meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 11px; }
+.key-copy { cursor: pointer; user-select: none; transition: color 0.18s var(--ease); }
 .key-copy:hover { color: var(--accent); }
+
 .website {
   display: inline-block; margin-top: 10px; font-size: 12px;
-  color: var(--accent); text-decoration: none;
+  color: var(--accent); text-decoration: none; font-weight: 500;
 }
 .website:hover { text-decoration: underline; }
+
 .models-toggle {
-  margin-top: 10px; font-size: 12px; color: var(--accent);
-  cursor: pointer; user-select: none;
+  margin-top: 12px; font-size: 12px; color: var(--accent); font-weight: 500;
+  cursor: pointer; user-select: none; display: inline-block;
 }
-.models-toggle:hover { text-decoration: underline; }
+.models-toggle:hover { opacity: 0.8; }
+
+/* iOS 分组内嵌列表 */
 .card-model-list {
-  margin-top: 8px; max-height: 180px; overflow-y: auto;
-  border: 1px solid var(--border); border-radius: 6px;
+  margin-top: 10px; max-height: 180px; overflow-y: auto;
+  background: var(--panel-2); border-radius: var(--radius-md);
 }
 .card-model-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 5px 10px; font-size: 12px; color: var(--text);
-  cursor: pointer; border-bottom: 1px solid var(--border);
+  padding: 7px 11px; font-size: 12px; color: var(--text);
+  cursor: pointer; transition: background 0.15s var(--ease);
 }
-.card-model-row:last-child { border-bottom: none; }
-.card-model-row:hover { background: var(--panel-2); }
-.cm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-model-row + .card-model-row { border-top: 1px solid var(--border); }
+.card-model-row:hover { background: var(--panel-3); }
+.cm-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 11.5px;
+}
 .cm-copy { flex: none; color: var(--muted); font-size: 11px; visibility: hidden; }
 .card-model-row:hover .cm-copy { visibility: visible; color: var(--accent); }
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 10; }
-.modal { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; width: 460px; max-height: 86vh; overflow-y: auto; }
-.modal h3 { margin-bottom: 14px; }
-.modal label { display: block; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
-.modal label input { margin-top: 4px; color: var(--text); }
-.model-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+
+/* 弹层：macOS sheet —— 磨砂遮罩 + 大圆角 */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  display: grid; place-items: center; z-index: 10;
+  animation: overlay-in 0.24s var(--ease);
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px;
+  width: 470px; max-height: 86vh; overflow-y: auto;
+  box-shadow: var(--shadow-2);
+  animation: sheet-in 0.34s var(--ease);
+}
+.modal h3 { margin-bottom: 16px; }
+.modal label {
+  display: block; margin-bottom: 12px;
+  font-size: 11.5px; color: var(--muted); font-weight: 500;
+}
+.modal label input { margin-top: 5px; color: var(--text); }
+
+.model-row { display: flex; gap: 6px; align-items: center; margin-top: 5px; }
 .model-row input { flex: 1; margin-top: 0; }
-.model-row button.small { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
-.model-picker { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; }
+.model-row button.small { padding: 7px 12px; font-size: 11.5px; white-space: nowrap; }
+
+/* 模型选择器：内嵌分组列表 */
+.model-picker {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  margin-bottom: 12px; overflow: hidden; background: var(--panel-2);
+}
 .picker-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   flex-wrap: wrap;
-  padding: 8px 10px; font-size: 12px; color: var(--muted);
+  padding: 9px 12px; font-size: 11.5px; color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
 .picker-filter {
-  width: 140px; padding: 4px 8px; font-size: 12px; margin-top: 0 !important;
+  width: 150px; padding: 5px 10px; font-size: 12px;
+  margin-top: 0 !important; border-radius: 7px;
 }
-.picker-head button.small { padding: 4px 8px; font-size: 11px; white-space: nowrap; }
-.model-list { max-height: 220px; overflow-y: auto; }
+.picker-head button.small { padding: 4px 10px; font-size: 11px; white-space: nowrap; }
+
+.model-list { max-height: 240px; overflow-y: auto; }
 .model-item {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 7px 12px; font-size: 13px; color: var(--text);
-  cursor: pointer; border-bottom: 1px solid var(--border);
+  padding: 8px 12px; font-size: 12px; color: var(--text);
+  cursor: pointer; transition: background 0.15s var(--ease);
 }
-.model-item:last-child { border-bottom: none; }
-.model-item:hover { background: var(--panel-2); }
-.model-item.active { color: var(--accent); background: var(--panel-2); font-weight: 600; }
-.mi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-item + .model-item { border-top: 1px solid var(--border); }
+.model-item:hover { background: var(--panel-3); }
+.model-item.active {
+  color: var(--accent); background: var(--accent-soft); font-weight: 600;
+}
+.mi-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 11.5px;
+}
 .mi-copy {
-  flex: none; padding: 2px 8px; font-size: 11px;
+  flex: none; padding: 3px 10px; font-size: 11px;
   visibility: hidden; white-space: nowrap;
 }
 .model-item:hover .mi-copy { visibility: visible; }
-.picker-empty { padding: 14px 12px; font-size: 12px; color: var(--muted); text-align: center; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.picker-empty { padding: 16px 12px; font-size: 12px; color: var(--muted); text-align: center; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 </style>

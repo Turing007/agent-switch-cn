@@ -90,33 +90,86 @@ async function openUpdateUrl(): Promise<void> {
 
 <style scoped>
 .shell { height: 100%; display: flex; flex-direction: column; }
+
+/* macOS 工具栏：半透明 + 毛玻璃 + 发丝分隔线 */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  gap: 16px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--bg-blur);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  position: relative;
+  z-index: 5;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
-.logo-img { width: 34px; height: 34px; display: block; }
-.subtitle { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
-.tabs { display: flex; gap: 6px; }
-.tabs button { padding: 8px 16px; font-size: 13px; background: transparent; }
-.tabs button.active { background: var(--accent); color: #fff; }
+
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo-img {
+  width: 30px; height: 30px; display: block; border-radius: 8px;
+  box-shadow: var(--shadow-1);
+}
+.brand strong {
+  display: block;
+  font-size: 13.5px; font-weight: 600; letter-spacing: -0.016em;
+}
+.subtitle {
+  display: block; color: var(--muted); font-size: 11px;
+  font-weight: 400; margin-top: 1px;
+}
+
+/* 分段控件（macOS Segmented Control） */
+.tabs {
+  display: flex; gap: 2px; padding: 2px;
+  background: var(--panel-2);
+  border-radius: var(--radius-pill);
+}
+.tabs button {
+  padding: 6px 16px; font-size: 12.5px; font-weight: 500;
+  background: transparent; color: var(--muted);
+  border-radius: var(--radius-pill);
+}
+.tabs button:hover { background: transparent; color: var(--text); }
+.tabs button:active { transform: none; }
+.tabs button.active {
+  background: var(--panel); color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
 .top-actions { display: flex; align-items: center; gap: 10px; }
-.check-update { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+.check-update { padding: 6px 13px; font-size: 12px; white-space: nowrap; }
 .update-badge {
-  padding: 6px 12px; font-size: 12px; white-space: nowrap;
-  color: var(--green); background: transparent; border-color: var(--green);
+  padding: 6px 13px; font-size: 12px; white-space: nowrap;
+  color: var(--green); background: var(--green-soft); border: none;
 }
-.update-badge:hover { border-color: var(--green); color: var(--green); }
+.update-badge:hover { background: var(--green-soft); color: var(--green); }
+
 .content { flex: 1; overflow: auto; }
+
+/* 提示条：磨砂胶囊 */
 .toast {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  padding: 10px 18px; border-radius: 8px; background: var(--panel-2);
-  border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 20;
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+  padding: 10px 18px; border-radius: var(--radius-pill);
+  background: var(--bg-blur);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  font-size: 12.5px; font-weight: 500; letter-spacing: -0.006em;
+  z-index: 20; max-width: 70vw; text-align: center;
+  animation: toast-in 0.34s var(--ease);
 }
-.toast.ok { border-color: var(--green); }
-.toast.err { border-color: var(--red); }
+.toast::before {
+  content: ''; display: inline-block; vertical-align: 1px;
+  width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 8px; background: var(--green);
+}
+.toast.err::before { background: var(--red); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
 </style>

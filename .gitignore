@@ -12,3 +12,4 @@ update-url.txt
 .electron-cache/
 src-tauri/target/
 src-tauri/gen/
+build/ui-preview/
