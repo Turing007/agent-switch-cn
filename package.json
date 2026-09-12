@@ -1,6 +1,6 @@
 {
   "name": "agent-switch-cn",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "国产 CLI Agent 模型配置切换器（Tauri v2 / Rust 桌面应用）",
   "private": true,
   "author": "agent-switch-cn",

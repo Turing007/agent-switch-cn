@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.2",
   "url": "https://github.com/Turing007/agent-switch-cn/releases/latest",
-  "notes": "Rust(Tauri v2) 重构：安装包 70MB → 2.8MB，内存占用大幅降低；全新 Apple 风格界面（浅色/深色随系统）；移除 Electron 依赖；检查更新增加网络重试"
+  "notes": "修复拉取模型丢失 Authorization 头导致需鉴权接口 401；修复备份目录重复嵌套；新增 Qoder 适配器与多模型注册；出站请求遵循 Windows 系统代理"
 }
