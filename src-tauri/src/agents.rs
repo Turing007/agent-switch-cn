@@ -36,11 +36,15 @@ pub struct AgentDef {
     pub custom_zcode: bool,
     /// Qoder 需要整块 provider 写入/读取
     pub custom_qoder: bool,
+    /// WorkBuddy 需要整块 models 数组写入/读取
+    pub custom_workbuddy: bool,
 }
 
 pub const ZCODE_PROVIDER_PREFIX: &str = "agent-switch:";
 /// Qoder 自定义 provider 的 key 前缀（与 Qoder 自身生成规则一致）
 pub const QODER_PROVIDER_PREFIX: &str = "qoder-custom-";
+/// WorkBuddy 自定义模型 id 前缀（用于识别本工具写入的条目）
+pub const WORKBUDDY_MODEL_PREFIX: &str = "agent-switch:";
 
 pub fn zcode_kind(base_url: &str) -> &'static str {
     if base_url.contains("anthropic") || base_url.contains("#fh") {
@@ -94,6 +98,7 @@ pub fn codegeex_agent() -> AgentDef {
         kind: AgentKind::File,
         custom_zcode: false,
         custom_qoder: false,
+        custom_workbuddy: false,
     }
 }
 
@@ -132,6 +137,7 @@ pub fn generic_cli_agent() -> AgentDef {
         kind: AgentKind::File,
         custom_zcode: false,
         custom_qoder: false,
+        custom_workbuddy: false,
     }
 }
 
@@ -145,6 +151,7 @@ pub fn zcode_agent() -> AgentDef {
         kind: AgentKind::File,
         custom_zcode: true,
         custom_qoder: false,
+        custom_workbuddy: false,
     }
 }
 
@@ -158,6 +165,7 @@ pub fn qoder_agent() -> AgentDef {
         kind: AgentKind::File,
         custom_zcode: false,
         custom_qoder: true,
+        custom_workbuddy: false,
     }
 }
 
@@ -171,6 +179,21 @@ pub fn trae_agent() -> AgentDef {
         kind: AgentKind::Cdp,
         custom_zcode: false,
         custom_qoder: false,
+        custom_workbuddy: false,
+    }
+}
+
+pub fn workbuddy_agent() -> AgentDef {
+    AgentDef {
+        id: "workbuddy",
+        name: "WorkBuddy (腾讯 AI Agent)",
+        description: "腾讯 WorkBuddy，通过 ~/.workbuddy/models.json 注册 OpenAI 兼容自定义模型（非破坏性写入，需在 WorkBuddy 模型列表中选用并重启生效）",
+        config_paths: vec!["{home}/.workbuddy/models.json"],
+        fields: vec![],
+        kind: AgentKind::File,
+        custom_zcode: false,
+        custom_qoder: false,
+        custom_workbuddy: true,
     }
 }
 
@@ -180,6 +203,7 @@ pub fn agent_registry() -> Vec<AgentDef> {
         zcode_agent(),
         qoder_agent(),
         trae_agent(),
+        workbuddy_agent(),
         generic_cli_agent(),
     ]
 }

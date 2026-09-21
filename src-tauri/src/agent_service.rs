@@ -1,6 +1,6 @@
 use crate::agents::{
     agent_registry, get_agent_def, qoder_protocol, zcode_kind, AgentDef, AgentField, AgentKind,
-    QODER_PROVIDER_PREFIX, ZCODE_PROVIDER_PREFIX,
+    QODER_PROVIDER_PREFIX, WORKBUDDY_MODEL_PREFIX, ZCODE_PROVIDER_PREFIX,
 };
 use crate::fsutil::{
     backup_file, detect_format, file_exists, get_by_path, read_json, read_json_object, read_toml_flat,
@@ -46,6 +46,17 @@ pub struct AgentService<'a> {
 
 fn normalized_base(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
+}
+
+/// WorkBuddy 的 models.json 需要完整 chat/completions 端点；
+/// 若 Base URL 已含该路径则原样保留，否则补全（OpenAI 兼容约定）。
+fn workbuddy_url(base_url: &str) -> String {
+    let base = normalized_base(base_url);
+    if base.ends_with("/chat/completions") {
+        base
+    } else {
+        format!("{base}/chat/completions")
+    }
 }
 
 impl<'a> AgentService<'a> {
@@ -122,6 +133,9 @@ impl<'a> AgentService<'a> {
         }
         if def.custom_qoder {
             return self.qoder_apply(file, p);
+        }
+        if def.custom_workbuddy {
+            return self.workbuddy_apply(file, p);
         }
         let format = detect_format(file);
         if format == "toml" {
@@ -267,6 +281,83 @@ impl<'a> AgentService<'a> {
         write_json(file, &Value::Object(data))
     }
 
+    /// WorkBuddy 自定义模型注册（非破坏性：仅新增/更新本工具管理的条目）
+    /// 写入 ~/.workbuddy/models.json 的 models 数组，每个勾选的模型一条。
+    /// 条目形状与官方「自定义模型」一致：id/name/vendor/url/apiKey + 能力开关。
+    fn workbuddy_apply(&self, file: &Path, p: &Provider) -> Result<(), String> {
+        let models = p.selected_models();
+        if models.is_empty() {
+            return Err("WorkBuddy 需要先填写或勾选「模型名」".into());
+        }
+        let url = workbuddy_url(&p.base_url);
+        if url == "/chat/completions" {
+            return Err("WorkBuddy 需要先填写 Base URL".into());
+        }
+        let vendor = if p.name.trim().is_empty() { "Custom".to_string() } else { p.name.clone() };
+
+        let mut data = read_json_object(file);
+        let mut list: Vec<Value> = data
+            .remove("models")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default();
+        list.retain(|e| {
+            !e.get("id")
+                .and_then(|v| v.as_str())
+                .map(|id| id.starts_with(WORKBUDDY_MODEL_PREFIX))
+                .unwrap_or(false)
+        });
+        for m in &models {
+            list.push(json!({
+                "id": format!("{WORKBUDDY_MODEL_PREFIX}{}:{m}", p.id),
+                "name": m,
+                "vendor": vendor,
+                "url": url,
+                "apiKey": p.api_key,
+                "supportsToolCall": true,
+                "supportsImages": false,
+                "supportsReasoning": false
+            }));
+        }
+        data.insert("models".into(), Value::Array(list));
+        write_json(file, &Value::Object(data))
+    }
+
+    /// WorkBuddy 当前状态：以本工具管理的模型条目为首选，按其 url 反查 provider
+    fn workbuddy_read_status(&self, file: &Path) -> SwitchStatus {
+        let none = SwitchStatus { configured: false, provider_name: None, model_name: None };
+        let Ok(data) = read_json(file) else {
+            return none;
+        };
+        let Some(list) = data.get("models").and_then(|v| v.as_array()) else {
+            return none;
+        };
+        let managed: Vec<&Value> = list
+            .iter()
+            .filter(|e| {
+                e.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| id.starts_with(WORKBUDDY_MODEL_PREFIX))
+                    .unwrap_or(false)
+            })
+            .collect();
+        let entry = managed.first().copied().or_else(|| list.first());
+        let Some(entry) = entry else {
+            return none;
+        };
+        let base = entry.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let provider_name = self
+            .store
+            .list_providers()
+            .into_iter()
+            .find(|p| workbuddy_url(&p.base_url) == normalized_base(base))
+            .map(|p| p.name);
+        SwitchStatus {
+            configured: !base.is_empty(),
+            provider_name,
+            model_name: entry.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        }
+    }
+
     /// ZCode 当前启用 provider 读取
     fn zcode_read_status(&self, file: &Path) -> SwitchStatus {
         if !file_exists(file) {
@@ -363,6 +454,9 @@ impl<'a> AgentService<'a> {
         }
         if def.custom_qoder {
             return self.qoder_read_status(Path::new(&instance.config_file_path), def.id);
+        }
+        if def.custom_workbuddy {
+            return self.workbuddy_read_status(Path::new(&instance.config_file_path));
         }
         let file = Path::new(&instance.config_file_path);
         let mut values: Map<String, Value> = Map::new();
@@ -461,6 +555,11 @@ impl<'a> AgentService<'a> {
                 let message = if def.custom_qoder {
                     format!(
                         "已注册 {} 自定义模型「{}」，请在 Qoder 的模型列表中选择它",
+                        def.name, provider.name
+                    )
+                } else if def.custom_workbuddy {
+                    format!(
+                        "已注册 {} 自定义模型「{}」，请在 WorkBuddy 的模型列表中选择它（首次需重启 WorkBuddy）",
                         def.name, provider.name
                     )
                 } else {
@@ -632,6 +731,102 @@ mod tests {
         assert_eq!(models.len(), 2);
         assert!(models.contains_key("m1"));
         assert!(models.contains_key("m2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WorkBuddy：写入 models 数组、补全 chat/completions 端点，且不破坏其它条目
+    #[test]
+    fn workbuddy_apply_registers_openai_endpoint_and_preserves_others() {
+        let dir = scratch("workbuddy-apply");
+        let file = dir.join("models.json");
+        std::fs::write(
+            &file,
+            r#"{"models":[{"id":"native","name":"native","url":"https://x/y"}],"extra":1}"#,
+        )
+        .unwrap();
+
+        let store = Store::load(&dir);
+        let mut p = provider("https://api.example.com/v1", Some("m1"));
+        p.model_names = Some(vec!["m1".into(), "m2".into()]);
+        AgentService::new(&store).workbuddy_apply(&file, &p).unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["extra"], json!(1));
+
+        let list = v["models"].as_array().unwrap();
+        assert_eq!(list.len(), 3);
+        assert!(list.iter().any(|e| e["id"] == json!("native")));
+
+        let managed = list
+            .iter()
+            .find(|e| e["id"] == json!("agent-switch:abc:m1"))
+            .unwrap();
+        assert_eq!(managed["name"], json!("m1"));
+        assert_eq!(managed["vendor"], json!("测试源"));
+        assert_eq!(managed["url"], json!("https://api.example.com/v1/chat/completions"));
+        assert_eq!(managed["apiKey"], json!("sk-test"));
+        assert_eq!(managed["supportsToolCall"], json!(true));
+        assert!(list.iter().any(|e| e["id"] == json!("agent-switch:abc:m2")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WorkBuddy：再次切换时替换本工具管理的条目而非累加
+    #[test]
+    fn workbuddy_apply_replaces_managed_entries_on_reswitch() {
+        let dir = scratch("workbuddy-reswitch");
+        let file = dir.join("models.json");
+        let store = Store::load(&dir);
+        let svc = AgentService::new(&store);
+
+        svc.workbuddy_apply(&file, &provider("https://api.example.com/v1", Some("m1")))
+            .unwrap();
+        svc.workbuddy_apply(&file, &provider("https://api.example.com/v1", Some("m3")))
+            .unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let list = v["models"].as_array().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["id"], json!("agent-switch:abc:m3"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WorkBuddy：缺少模型名或 Base URL 时拒绝写入
+    #[test]
+    fn workbuddy_apply_rejects_invalid_input() {
+        let dir = scratch("workbuddy-reject");
+        let file = dir.join("models.json");
+        let store = Store::load(&dir);
+        let svc = AgentService::new(&store);
+
+        assert!(svc
+            .workbuddy_apply(&file, &provider("https://api.example.com/v1", None))
+            .is_err());
+        assert!(svc.workbuddy_apply(&file, &provider("", Some("m1"))).is_err());
+        assert!(!file.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WorkBuddy：按 url 反查 provider 回显状态
+    #[test]
+    fn workbuddy_read_status_matches_provider_by_url() {
+        let dir = scratch("workbuddy-status");
+        let file = dir.join("workbuddy-models.json");
+        let mut store = Store::load(&dir);
+        let mut p = provider("https://api.example.com/v1", Some("m1"));
+        p.model_names = Some(vec!["m1".into()]);
+        store.upsert_provider(p.clone()).unwrap();
+
+        let svc = AgentService::new(&store);
+        svc.workbuddy_apply(&file, &p).unwrap();
+
+        let st = svc.workbuddy_read_status(&file);
+        assert!(st.configured);
+        assert_eq!(st.provider_name.as_deref(), Some("测试源"));
+        assert_eq!(st.model_name.as_deref(), Some("m1"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
