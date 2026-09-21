@@ -1,5 +1,5 @@
 {
-  "version": "0.1.2",
+  "version": "0.1.3",
   "url": "https://github.com/Turing007/agent-switch-cn/releases/latest",
-  "notes": "修复拉取模型丢失 Authorization 头导致需鉴权接口 401；修复备份目录重复嵌套；新增 Qoder 适配器与多模型注册；出站请求遵循 Windows 系统代理"
+  "notes": "新增 WorkBuddy（腾讯 AI Agent）适配器：通过 ~/.workbuddy/models.json 注册 OpenAI 兼容自定义模型，支持多模型、非破坏性写入"
 }
